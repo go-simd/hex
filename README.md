@@ -18,10 +18,16 @@ b, err := hex.DecodeString(s)         // same bytes + same errors as encoding/he
 API mirrors `encoding/hex`: `Encode`, `EncodeToString`, `Decode`,
 `DecodeString`, `EncodedLen`, `DecodedLen`.
 
-| op | amd64 | arm64 / loong64 / riscv64 |
-|---|---|---|
-| **encode** | **SSE2/SSSE3** + **AVX2** (runtime dispatch) | scalar (stdlib) — NEON/LSX/RVV planned |
-| **decode** | **SSE2/SSSE3** + **AVX2** (runtime dispatch) | scalar (stdlib) — NEON/LSX/RVV planned |
+| op | amd64 | ppc64le | s390x | arm64 / loong64 / riscv64 |
+|---|---|---|---|---|
+| **encode** | **SSE2/SSSE3** + **AVX2** (runtime dispatch) | **VSX** (`VPERM` table lookup) | **vector facility** (`VPERM`, big-endian) | scalar (stdlib) — NEON/LSX/RVV planned |
+| **decode** | **SSE2/SSSE3** + **AVX2** (runtime dispatch) | **VSX** (`VCHLB` + `VPERM`) | **vector facility** (`VCHLB` + `VPERM`, big-endian) | scalar (stdlib) — NEON/LSX/RVV planned |
+
+Six architectures are wired into go-asmgen; three of them now have hand-tuned
+SIMD hex kernels (amd64, **ppc64le VSX**, **s390x vector facility**), the rest
+fall back to the `encoding/hex` scalar loop. The ppc64le and s390x kernels are
+**QEMU-validated** (full table + fuzz, byte- and error-identical to
+`encoding/hex`); native throughput numbers are pending real hardware.
 
 ## How encode works
 
@@ -64,6 +70,32 @@ Verified against `encoding/hex` (table + fuzz: invalid bytes at every offset in
 both nibble positions, across block boundaries; native arm64 scalar + amd64 SSE
 under Rosetta; AVX2 force-tested on native CI hardware).
 
+## ppc64le (VSX) and s390x (vector facility)
+
+Both ports map the `PSHUFB`/`PMADDUBSW` amd64 logic onto vector **permute**:
+
+- **Encode** — load 16 source bytes, split into nibbles (`VAND 0x0f` for the low
+  nibble; `VSRB`/`VESRLB $4` for the high), map each nibble to its ASCII digit
+  with a single `VPERM` of the 16-entry table `"0123456789abcdef"`, then
+  interleave the hi/lo ASCII streams with two `VPERM` passes driven by control
+  vectors so each input byte's `(hi, lo)` characters land adjacent, and store.
+- **Decode** — load two 16-char halves, range-check each char with unsigned
+  compares (`VCMPGTUB` on ppc64le, `VCHLB` on s390x) for `['0','9']`/`['A','F']`/
+  `['a','f']`, derive the nibble by masked subtraction, accumulate a "bad" mask
+  and bail to the scalar tail on any invalid char (so the `InvalidByteError`
+  offset stays bit-exact), then `VPERM`-gather the even/odd nibbles, `hi<<4 | lo`
+  (`VSLB`/`VESLB $4` + `VOR`), and store.
+
+**ppc64le** uses `LXVB16X`/`STXVB16X` (natural memory byte order on
+little-endian, sidestepping the `LXVD2X` doubleword swap), minding the VSX↔VMX
+`Vn == VS(32+n)` aliasing. **s390x is big-endian**: `VL` puts the first memory
+byte into lane 0 (the leftmost/high-order lane), so the per-byte *high-nibble-
+first* ordering is fixed by the `VPERM` control vectors, not by endianness — a
+position-dependent test (`0x12 0x34 → "1234"`) guards it. Both ports are
+validated under QEMU with the full differential table test and coverage-guided
+`FuzzEncode`/`FuzzDecode` (byte- and error-identical to `encoding/hex`); see the
+`qemu` CI job.
+
 ## Performance
 
 Encode/decode throughput on a 1 MiB random buffer, **native amd64** (GitHub
@@ -83,7 +115,13 @@ On decode this package is **1.37× faster than `tmthrgd/go-hex`** and 6.24× ove
 stdlib. The forced SSE-only paths are ~16800 MB/s encode and ~6329 MB/s decode;
 the AVX2 dispatch above is the default on AVX2 hardware (~13063 MB/s decode).
 
-Honest notes:
+The **ppc64le (VSX)** and **s390x (vector facility)** kernels are
+**QEMU-validated; native perf pending** — they are byte- and error-identical to
+`encoding/hex` under emulation, but the dev box and CI have no native POWER / IBM
+Z hardware, so representative throughput numbers will be filled in once a native
+runner is available.
+
+Notes:
 
 - [`tmthrgd/go-hex`](https://github.com/tmthrgd/go-hex) is the prior pure-Go SIMD
   hex codec (hand-written Plan9 asm, SSE/AVX). It was **archived upstream in
@@ -96,13 +134,17 @@ Honest notes:
 
 ## Regenerating the assembly
 
-`encode_amd64.s` and `decode_amd64.s` are committed. To regenerate (go-asmgen is
-a build-time tool, not a runtime dependency):
+The per-arch `.s` kernels are committed. To regenerate (go-asmgen is a
+build-time tool, not a runtime dependency):
 
 ```sh
-go get github.com/go-asmgen/asmgen@v0.4.0
-go run encode_gen.go
-go run decode_gen.go
+go get github.com/go-asmgen/asmgen@v0.5.0
+go run encode_gen.go            # amd64
+go run decode_gen.go            # amd64
+go run encode_ppc64le_gen.go    # ppc64le VSX
+go run decode_ppc64le_gen.go    # ppc64le VSX
+go run encode_s390x_gen.go      # s390x vector facility
+go run decode_s390x_gen.go      # s390x vector facility
 go mod edit -droprequire github.com/go-asmgen/asmgen
 go mod edit -go=1.20
 go mod tidy
@@ -110,12 +152,13 @@ go mod tidy
 
 ## Coverage
 
-The CI gate enforces **100% coverage of the Go code** on each arch job (native
-amd64 + native arm64; the `!amd64` generic fallback compiles and is measured on
-arm64). Coverage is of the Go statements only: the generated `.s` SIMD kernels
-are not measured by `go test -cover` — they are validated by differential tests
-against the scalar `encoding/hex` reference (including invalid bytes at every
-offset) plus fuzzing.
+The CI gate enforces **100% coverage of the Go code** on every arch job: native
+amd64 + native arm64, plus the QEMU-emulated **ppc64le** and **s390x** jobs (the
+generic fallback compiles and is measured on arm64; the VSX and vector-facility
+dispatch + kernels are measured under emulation). Coverage is of the Go
+statements only: the generated `.s` SIMD kernels are not measured by
+`go test -cover` — they are validated by differential tests against the scalar
+`encoding/hex` reference (including invalid bytes at every offset) plus fuzzing.
 
 ## License
 

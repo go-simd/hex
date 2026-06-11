@@ -3,6 +3,7 @@ on:
   push: { branches: [main] }
   pull_request:
 jobs:
+  # Native runners for the architectures GitHub provides directly.
   test:
     strategy:
       fail-fast: false
@@ -25,3 +26,43 @@ jobs:
           pct=$(go tool cover -func=cov.out | awk '/^total:/{print $3}')
           echo "coverage=$pct"
           [ "$pct" = "100.0%" ] || { echo "coverage below 100%"; exit 1; }
+
+  # Cross-architecture SIMD kernels (ppc64le VSX, s390x vector facility) run
+  # under QEMU via binfmt, mirroring the riscv64/loong64 jobs: vet + cross-build
+  # the test binary, run the full test suite, the fuzz seed corpus, and a short
+  # coverage-guided fuzz of both directions, plus the 100% coverage gate — all
+  # inside an emulated debian/golang container so the generated assembly is
+  # exercised on a real (emulated) CPU.
+  qemu:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ppc64le, s390x]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: stable }
+      - name: vet + cross-build test binary
+        run: |
+          GOOS=linux GOARCH=${{ matrix.arch }} go vet ./...
+          GOOS=linux GOARCH=${{ matrix.arch }} go test -c -o hex.test .
+      - name: register binfmt handlers
+        run: docker run --privileged --rm tonistiigi/binfmt --install ${{ matrix.arch }}
+      - name: run test suite + fuzz seeds under QEMU
+        run: |
+          docker run --platform linux/${{ matrix.arch }} --rm -v "$PWD":/t -w /t \
+            debian:trixie ./hex.test -test.v
+      - name: coverage-guided fuzz + 100% coverage gate under QEMU
+        run: |
+          docker run --platform linux/${{ matrix.arch }} --rm \
+            -v "$PWD":/src -w /src -e GOFLAGS=-mod=mod \
+            golang:1.26-trixie bash -c '
+              set -e
+              go test -run "^\$" -fuzz FuzzEncode -fuzztime 20s .
+              go test -run "^\$" -fuzz FuzzDecode -fuzztime 20s .
+              go test -covermode=atomic -coverprofile=cov.out .
+              pct=$(go tool cover -func=cov.out | awk "/^total:/{print \$3}")
+              echo "coverage=$pct"
+              [ "$pct" = "100.0%" ] || { echo "coverage below 100%"; exit 1; }
+            '
