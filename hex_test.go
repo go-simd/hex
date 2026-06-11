@@ -73,6 +73,19 @@ func TestDecodeMatchesStdlib(t *testing.T) {
 		"00zz",       // valid then invalid
 		"  ",         // spaces
 		"deadbeefXX", // valid prefix, invalid tail
+		// Multi-block (>=32 chars) inputs that exercise the SIMD kernel: all
+		// valid, and invalid chars at block boundaries / hi vs lo nibble.
+		"00112233445566778899aabbccddeeff00112233",   // 40 chars, all valid (>1 block)
+		"00112233445566778899aabbccddeeff0011223g",   // invalid in last block, lo nibble
+		"00112233445566778899aabbccddeeffg011223344", // invalid at start of 2nd block, hi nibble
+		"g0112233445566778899aabbccddeeff00112233",   // invalid at offset 0 (hi)
+		"0g112233445566778899aabbccddeeff00112233",   // invalid at offset 1 (lo)
+		"00112233445566778899aabbccddeeff/0112233",   // '/' just below '0'
+		"00112233445566778899aabbccddeeff:0112233",   // ':' just above '9'
+		"00112233445566778899aabbccddeeff@0112233",   // '@' just below 'A'
+		"00112233445566778899aabbccddeeff`0112233",   // '`' just below 'a'
+		"00112233445566778899aabbccddeeff0011223",    // 39 chars: odd, all valid -> ErrLength
+		"00112233445566778899aabbccddeeff001122g",    // odd + invalid -> InvalidByteError
 	}
 	for _, s := range cases {
 		gotB, gotErr := DecodeString(s)
@@ -120,6 +133,9 @@ func FuzzDecode(f *testing.F) {
 	f.Add("DEADBEEF")
 	f.Add("0g")
 	f.Add("abc")
+	f.Add("00112233445566778899aabbccddeeff00112233") // >1 block, all valid
+	f.Add("00112233445566778899aabbccddeeffg0112233") // invalid at block boundary
+	f.Add(EncodeToString(randBytes(257, 1)))          // many blocks, valid
 	f.Fuzz(func(t *testing.T, s string) {
 		gotB, gotErr := DecodeString(s)
 		wantB, wantErr := hex.DecodeString(s)
