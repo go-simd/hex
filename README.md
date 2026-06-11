@@ -72,13 +72,13 @@ Actions `ubuntu-latest`, AMD EPYC, AVX2-capable, `GOAMD64=v1`), median of 6.
 
 | implementation | kind | encode MB/s | vs stdlib | decode MB/s | vs stdlib |
 |---|---|---:|---:|---:|---:|
-| `encoding/hex` (stdlib) | scalar | 929 | 1.00× | 1885 | 1.00× |
-| **this package** | pure-Go SIMD (SSE2/SSSE3 + **AVX2**), encode **and** decode | **21961** | **23.6×** | _pending CI_ | — |
-| [`tmthrgd/go-hex`](https://github.com/tmthrgd/go-hex) | pure-Go SIMD (SSE/AVX), **archived** | 19982 | 21.5× | 8644 | 4.59× |
+| `encoding/hex` (stdlib) | scalar | 980 | 1.00× | 2095 | 1.00× |
+| **this package** | pure-Go SIMD (SSE2/SSSE3 + **AVX2**), encode **and** decode | **20023** | **20.4×** | **13078** | **6.24×** |
+| [`tmthrgd/go-hex`](https://github.com/tmthrgd/go-hex) | pure-Go SIMD (SSE/AVX), **archived** | 18785 | 19.2× | 9566 | 4.57× |
 
-This package's forced SSE-only encode path is ~15700 MB/s (16.9×); the AVX2
-dispatch above is the default on AVX2 hardware. Decode numbers above are filled
-in from the CI bench run after this commit lands.
+On decode this package is **1.37× faster than `tmthrgd/go-hex`** and 6.24× over
+stdlib. The forced SSE-only paths are ~16800 MB/s encode and ~6329 MB/s decode;
+the AVX2 dispatch above is the default on AVX2 hardware (~13063 MB/s decode).
 
 Honest notes:
 
