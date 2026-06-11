@@ -61,3 +61,38 @@ func benchForce(b *testing.B, avx2 bool) {
 
 func BenchmarkEncodeForceSSE(b *testing.B)  { benchForce(b, false) }
 func BenchmarkEncodeForceAVX2(b *testing.B) { benchForce(b, true) }
+
+// TestDispatchBranchesAMD64 drives every branch of the amd64 encodeSIMD and
+// decodeSIMD dispatchers through the public Encode/Decode API. CI runs on a
+// native AVX2 box where hasAVX2 is always true, so the SSE and scalar-only
+// branches are only reachable by forcing hasAVX2 low (restored via defer).
+func TestDispatchBranchesAMD64(t *testing.T) {
+	check := func(n int) {
+		src := randBytes(n, int64(n)*17+3)
+		// Encode round-trips through encodeSIMD's dispatch.
+		if got, want := EncodeToString(src), stdhex.EncodeToString(src); got != want {
+			t.Fatalf("encode hasAVX2=%v n=%d:\n got=%q\nwant=%q", hasAVX2, n, got, want)
+		}
+		// Decode round-trips through decodeSIMD's dispatch.
+		enc := stdhex.EncodeToString(src)
+		dec, err := DecodeString(enc)
+		if err != nil {
+			t.Fatalf("decode hasAVX2=%v n=%d: %v", hasAVX2, n, err)
+		}
+		if string(dec) != string(src) {
+			t.Fatalf("decode hasAVX2=%v n=%d: round-trip mismatch", hasAVX2, n)
+		}
+	}
+	ns := []int{0, 8, 15, 16, 31, 32, 33, 63, 64, 65, 128}
+	// Real CPU flag: exercises the AVX2 branch (n>=32 enc / n>=64 dec) and small n.
+	for _, n := range ns {
+		check(n)
+	}
+	// Forced low: exercises the SSE branch and the scalar-only return.
+	saved := hasAVX2
+	defer func() { hasAVX2 = saved }()
+	hasAVX2 = false
+	for _, n := range ns {
+		check(n)
+	}
+}

@@ -1,5 +1,8 @@
 # hex
 
+[![CI](https://github.com/go-simd/hex/actions/workflows/ci.yml/badge.svg)](https://github.com/go-simd/hex/actions/workflows/ci.yml)
+![coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
+
 A drop-in fast path for hexadecimal (base16) encoding **and decoding**,
 byte- **and** error-identical to the standard library's
 [`encoding/hex`](https://pkg.go.dev/encoding/hex). Both directions run a SIMD
@@ -104,6 +107,15 @@ go mod edit -droprequire github.com/go-asmgen/asmgen
 go mod edit -go=1.20
 go mod tidy
 ```
+
+## Coverage
+
+The CI gate enforces **100% coverage of the Go code** on each arch job (native
+amd64 + native arm64; the `!amd64` generic fallback compiles and is measured on
+arm64). Coverage is of the Go statements only: the generated `.s` SIMD kernels
+are not measured by `go test -cover` — they are validated by differential tests
+against the scalar `encoding/hex` reference (including invalid bytes at every
+offset) plus fuzzing.
 
 ## License
 
