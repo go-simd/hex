@@ -44,15 +44,17 @@ Encode/decode throughput on a 1 MiB random buffer, **native amd64** (GitHub
 Actions `ubuntu-latest`), `-count=6`, median MB/s — see
 [`.github/workflows/bench.yml`](.github/workflows/bench.yml). The dev box is
 arm64, where this package's amd64 kernel only runs under Rosetta
-(unrepresentative), so these numbers come from CI on native hardware. (Table
-populated from the bench run; values below are placeholders until the workflow
-reports.)
+(unrepresentative), so these numbers come from CI on native hardware (GitHub
+Actions `ubuntu-latest`, AMD EPYC, AVX2-capable, `GOAMD64=v1`), median of 6.
 
-| implementation | kind | encode MB/s | decode MB/s |
-|---|---|---:|---:|
-| `encoding/hex` (stdlib) | scalar | _see CI_ | _see CI_ |
-| this package | pure-Go SIMD (SSE2/SSSE3 + AVX2) encode; stdlib decode | _see CI_ | _see CI_ |
-| [`tmthrgd/go-hex`](https://github.com/tmthrgd/go-hex) | pure-Go SIMD (SSE/AVX) | _see CI_ | _see CI_ |
+| implementation | kind | encode MB/s | vs stdlib | decode MB/s | vs stdlib |
+|---|---|---:|---:|---:|---:|
+| `encoding/hex` (stdlib) | scalar | 929 | 1.00× | 1885 | 1.00× |
+| **this package** | pure-Go SIMD (SSE2/SSSE3 + **AVX2**) encode; stdlib decode | **21961** | **23.6×** | 1885 | 1.00× |
+| [`tmthrgd/go-hex`](https://github.com/tmthrgd/go-hex) | pure-Go SIMD (SSE/AVX), **archived** | 19982 | 21.5× | 8644 | 4.59× |
+
+This package's forced SSE-only encode path is ~15700 MB/s (16.9×); the AVX2
+dispatch above is the default on AVX2 hardware.
 
 Honest notes:
 
