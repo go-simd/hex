@@ -115,11 +115,49 @@ On decode this package is **1.37× faster than `tmthrgd/go-hex`** and 6.24× ove
 stdlib. The forced SSE-only paths are ~16800 MB/s encode and ~6329 MB/s decode;
 the AVX2 dispatch above is the default on AVX2 hardware (~13063 MB/s decode).
 
-The **ppc64le (VSX)** and **s390x (vector facility)** kernels are
-**QEMU-validated; native perf pending** — they are byte- and error-identical to
-`encoding/hex` under emulation, but the dev box and CI have no native POWER / IBM
-Z hardware, so representative throughput numbers will be filled in once a native
-runner is available.
+**Re-bench ratios (as of 2026-06-14, `-count=6` medians, kernels unchanged).**
+amd64 measured on the local x86_64 QEMU VM (absolute MB/s run low; ratios are the
+signal); arm64 native on Apple Silicon:
+
+| arch | op | ours vs stdlib | ours vs tmthrgd |
+|---|---|---:|---:|
+| amd64 | encode | **~2.96×** | **~1.05× (ours edges)** |
+| amd64 | decode | **~2.29×** | **~1.23× (ours wins)** |
+| arm64 | encode | ~1.0× (no SIMD kernel — generic fallback) | ~1.0× |
+| arm64 | decode | ~1.0× (no SIMD kernel) | **~9.7× (tmthrgd's arm64 decode is slow scalar)** |
+
+**Verdict holds:** on amd64 this package still edges `tmthrgd/go-hex` on encode
+and clearly leads on decode. arm64 has no SIMD kernel yet (NEON planned), so
+encode/decode track stdlib; the ~9.7× over tmthrgd on arm64 decode is because
+tmthrgd has no arm64 SIMD path either and its scalar decode is much slower than
+`encoding/hex`. Native-CI absolute numbers above are unchanged (gh logs
+unavailable in this env).
+
+### ppc64le / s390x — llvm-mca cycle-model estimate
+
+> **Static analysis, NOT a hardware measurement; native perf pending real
+> silicon.** No GitHub-hosted POWER/IBM Z runner exists and qemu's TCG is not
+> cycle-accurate, so the cycle model is the only defensible signal. Numbers from
+> `llvm-mca` (LLVM 22) fed the straight-line **encode** inner loop
+> (`encodeBlocksVSX` / `encodeBlocksVX`, 16 input bytes → 32 hex bytes/iter)
+> translated to LLVM asm; no data-dependent branch, so the model is the whole
+> story. Scalar baseline: the per-input-byte two-nibble-LUT loop modeled the same.
+
+| arch | cpu model | SIMD cyc/iter | SIMD input-B/cyc | scalar input-B/cyc | est. speedup |
+|---|---|---:|---:|---:|---:|
+| ppc64le | pwr9 | 5.0 (16 B in) | ~3.2 | ~0.5 (1 B / 2.0 cyc) | **~6.4×** |
+| s390x | z14 | 3.0 (16 B in) | ~5.33 | ~0.33 (1 B / 3.0 cyc) | **~16×** |
+
+Hex encode is the SIMD sweet spot: a pure `VPERM` table-lookup with no branches,
+so the VSX/vector kernels are estimated **~6× (ppc64le)** and **~16× (s390x)**
+their scalar two-LUT baseline on the cycle model — s390x's z14 retires the four
+`VPERM`s + load + two stores in just 3 cycles. Caveats: llvm-mca idealizes the
+frontend (perfect dispatch, no branch misprediction, no cache/store-buffer
+stalls), so these are compute upper bounds; the scalar baseline's nibble-LUT
+loads are assumed L1-resident. The decode kernels (with their `VCHLB` range
+validation) would model lower but were not isolated here — encode is the cleaner
+straight-line loop. All instructions were accepted and modeled by llvm-mca (no
+fallbacks).
 
 Notes:
 
