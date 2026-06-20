@@ -146,6 +146,16 @@ Measured on real **POWER10** (ppc64le VSX, GCC Compile Farm, Go 1.26.4, June
 vs 942 MB/s); also beats `tmthrgd/go-hex`. This replaces the earlier cycle-model
 estimate for ppc64le with a real hardware throughput number.
 
+### riscv64 — native SpacemiT X60 measurement: scalar parity
+
+Measured on a real **SpacemiT X60** (riscv64 RVV 1.0, GCC Compile Farm, Go
+1.26.4, June 2026). **Honest result: scalar parity on riscv64** — **encode 123
+vs stdlib 123 MB/s** (tmthrgd/go-hex is slightly ahead here at ~144), **decode
+173 vs 173 MB/s**. The byte-shuffle/nibble kernel does **not** beat the scalar
+`encoding/hex` on this low-power, *in-order* core (currently the only
+widely-available RVV 1.0 silicon); an out-of-order RVV core would likely lift
+it. **The wins over tmthrgd/go-hex stay on amd64 and arm64.**
+
 ### s390x — llvm-mca cycle-model estimate
 
 > **Static analysis, NOT a hardware measurement; native perf pending real
