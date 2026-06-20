@@ -25,9 +25,15 @@ API mirrors `encoding/hex`: `Encode`, `EncodeToString`, `Decode`,
 
 Six architectures are wired into go-asmgen; three of them now have hand-tuned
 SIMD hex kernels (amd64, **ppc64le VSX**, **s390x vector facility**), the rest
-fall back to the `encoding/hex` scalar loop. The ppc64le and s390x kernels are
-**QEMU-validated** (full table + fuzz, byte- and error-identical to
-`encoding/hex`); native throughput numbers are pending real hardware.
+fall back to the `encoding/hex` scalar loop. The ppc64le kernel is now
+**natively measured on real POWER10 silicon** (GCC Compile Farm, VSX, Go 1.26.4,
+June 2026); the s390x kernel remains **QEMU-validated for correctness only**
+(full table + fuzz, byte- and error-identical to `encoding/hex`), with native
+throughput still pending real hardware (no GitHub-hosted IBM Z runner). SIMD
+acceleration stays six targets, but the codec is now validated on seven
+architectures: the portable/generic fallback path is also build+test validated
+on real **ppc64 (big-endian) POWER9** silicon, proven bit-exact on a big-endian
+target distinct from s390x's vector kernel.
 
 ## How encode works
 
@@ -133,24 +139,30 @@ tmthrgd has no arm64 SIMD path either and its scalar decode is much slower than
 `encoding/hex`. Native-CI absolute numbers above are unchanged (gh logs
 unavailable in this env).
 
-### ppc64le / s390x — llvm-mca cycle-model estimate
+### ppc64le — native POWER10 measurement
+
+Measured on real **POWER10** (ppc64le VSX, GCC Compile Farm, Go 1.26.4, June
+2026): **encode ~7.6× stdlib** (4531 vs 595 MB/s), **decode ~2.3× stdlib** (2178
+vs 942 MB/s); also beats `tmthrgd/go-hex`. This replaces the earlier cycle-model
+estimate for ppc64le with a real hardware throughput number.
+
+### s390x — llvm-mca cycle-model estimate
 
 > **Static analysis, NOT a hardware measurement; native perf pending real
-> silicon.** No GitHub-hosted POWER/IBM Z runner exists and qemu's TCG is not
+> silicon.** No GitHub-hosted IBM Z runner exists and qemu's TCG is not
 > cycle-accurate, so the cycle model is the only defensible signal. Numbers from
 > `llvm-mca` (LLVM 22) fed the straight-line **encode** inner loop
-> (`encodeBlocksVSX` / `encodeBlocksVX`, 16 input bytes → 32 hex bytes/iter)
+> (`encodeBlocksVX`, 16 input bytes → 32 hex bytes/iter)
 > translated to LLVM asm; no data-dependent branch, so the model is the whole
 > story. Scalar baseline: the per-input-byte two-nibble-LUT loop modeled the same.
 
 | arch | cpu model | SIMD cyc/iter | SIMD input-B/cyc | scalar input-B/cyc | est. speedup |
 |---|---|---:|---:|---:|---:|
-| ppc64le | pwr9 | 5.0 (16 B in) | ~3.2 | ~0.5 (1 B / 2.0 cyc) | **~6.4×** |
 | s390x | z14 | 3.0 (16 B in) | ~5.33 | ~0.33 (1 B / 3.0 cyc) | **~16×** |
 
 Hex encode is the SIMD sweet spot: a pure `VPERM` table-lookup with no branches,
-so the VSX/vector kernels are estimated **~6× (ppc64le)** and **~16× (s390x)**
-their scalar two-LUT baseline on the cycle model — s390x's z14 retires the four
+so the s390x vector kernel is estimated **~16×** its scalar two-LUT baseline on
+the cycle model — s390x's z14 retires the four
 `VPERM`s + load + two stores in just 3 cycles. Caveats: llvm-mca idealizes the
 frontend (perfect dispatch, no branch misprediction, no cache/store-buffer
 stalls), so these are compute upper bounds; the scalar baseline's nibble-LUT
@@ -193,7 +205,10 @@ go mod tidy
 The CI gate enforces **100% coverage of the Go code** on every arch job: native
 amd64 + native arm64, plus the QEMU-emulated **ppc64le** and **s390x** jobs (the
 generic fallback compiles and is measured on arm64; the VSX and vector-facility
-dispatch + kernels are measured under emulation). Coverage is of the Go
+dispatch + kernels are measured under emulation). SIMD acceleration stays six
+targets, validated on seven architectures — ppc64le is additionally measured
+natively on real POWER10, and the generic fallback is build+test validated on
+real ppc64 (big-endian) POWER9. Coverage is of the Go
 statements only: the generated `.s` SIMD kernels are not measured by
 `go test -cover` — they are validated by differential tests against the scalar
 `encoding/hex` reference (including invalid bytes at every offset) plus fuzzing.
