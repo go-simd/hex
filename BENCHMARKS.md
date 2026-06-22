@@ -6,50 +6,60 @@ go-simd), `github.com/tmthrgd/go-hex` (pure-Go SIMD hex). Inputs: pseudo-random
 bytes (seed 2), sizes 64 B / 1 KiB / 16 KiB / 1 MiB; `-benchtime=0.3s -count=3`,
 median reported. Throughput is over the **source** domain (raw bytes for encode,
 hex text for decode). Correctness: `go test` round-trips and byte-matches
-`encoding/hex` on every size. Reproduce:
+`encoding/hex` on every size, plus a fuzz-validated every-offset invalid-byte
+sweep through the NEON decode kernel. Reproduce:
 
 ```
 GOWORK=off go test -run='^$' -bench=Parity -benchmem -benchtime=0.3s -count=3 .
 ```
 
-> **arm64 caveat (this host).** go-simd/hex ships SIMD kernels for **amd64,
-> ppc64le and s390x only** — there is *no* arm64/NEON kernel yet. On this host
-> `go-simd/hex` therefore *is* `encoding/hex` (zero-overhead fallback), which the
-> numbers below confirm (gosimd ≈ stdlib to within noise). The real SIMD speedup
-> for hex must be measured on **amd64/AVX2** (follow-up — needs an x86_64 host).
+> **arm64 NEON kernel (this host).** As of 2026-06-22 go-simd/hex ships a real
+> **arm64/NEON** kernel (encode: nibble split + 16-byte VTBL lookup + VST2
+> interleaving store; decode: VLD2 deinterleaving load + range-validate + nibble
+> fuse), alongside the existing amd64/ppc64le/s390x kernels. The numbers below
+> are measured natively on this NEON host — they are a SIMD result, no longer a
+> stdlib fallback.
 
 ## Encode
 
 | op | size | go-simd (GB/s) | stdlib | tmthrgd (SIMD ref) | ratio vs stdlib | ratio vs tmthrgd | verdict |
 |----|------|---------------:|-------:|-------------------:|----------------:|-----------------:|---------|
-| encode | 64 B   | 1.84 | 1.84 | 1.84 | 1.00× | 1.00× | arm64 fallback = stdlib |
-| encode | 1 KiB  | 1.78 | 1.83 | 1.82 | 0.98× | 0.98× | arm64 fallback = stdlib |
-| encode | 16 KiB | 1.90 | 1.94 | 1.89 | 0.98× | 1.00× | arm64 fallback = stdlib |
-| encode | 1 MiB  | 1.93 | 1.94 | 1.91 | 1.00× | 1.01× | arm64 fallback = stdlib |
+| encode | 64 B   | 11.22 | 1.75 | 1.82 |  6.4× |  6.2× | NEON wins |
+| encode | 1 KiB  | 29.36 | 1.79 | 1.75 | 16.4× | 16.8× | NEON wins |
+| encode | 16 KiB | 35.62 | 1.92 | 1.87 | 18.6× | 19.0× | NEON wins |
+| encode | 1 MiB  | 40.19 | 1.88 | 1.75 | 21.4× | 23.0× | NEON wins |
 
 ## Decode
 
 | op | size | go-simd (GB/s) | stdlib | tmthrgd (SIMD ref) | ratio vs stdlib | ratio vs tmthrgd | verdict |
 |----|------|---------------:|-------:|-------------------:|----------------:|-----------------:|---------|
-| decode | 64 B   | 3.32 | 3.33 | 1.31 | 1.00× | 2.53× | =stdlib; beats tmthrgd arm64 |
-| decode | 1 KiB  | 3.38 | 3.39 | 1.15 | 1.00× | 2.93× | =stdlib; beats tmthrgd arm64 |
-| decode | 16 KiB | 3.47 | 3.48 | 1.12 | 1.00× | 3.10× | =stdlib; beats tmthrgd arm64 |
-| decode | 1 MiB  | 3.46 | 3.47 | 0.36 | 1.00× | **9.7×** | =stdlib; tmthrgd arm64 collapses |
+| decode | 64 B   | 7.53 | 3.02 | 1.26 | 2.49× | 5.98× | NEON wins |
+| decode | 1 KiB  | 7.85 | 3.25 | 1.15 | 2.42× | 6.83× | NEON wins |
+| decode | 16 KiB | 8.34 | 3.37 | 1.08 | 2.47× | 7.74× | NEON wins |
+| decode | 1 MiB  | 8.08 | 3.25 | 0.33 | 2.49× | **24.5×** | NEON wins |
+
+## Before → after (arm64)
+
+Prior to the NEON kernel, go-simd/hex *was* `encoding/hex` on arm64 (zero-overhead
+stdlib fallback), so go-simd ≈ stdlib by construction:
+
+| op (1 MiB) | before (×stdlib) | after (×stdlib) |
+|------------|-----------------:|----------------:|
+| encode | 1.00× (fallback) | **21.4×** |
+| decode | 1.00× (fallback) | **2.49×** |
 
 ## Summary
 
-* On **arm64 this is a stdlib fallback**, so go-simd ≈ stdlib by construction
-  (encode 0.98–1.00×, decode 1.00×). This *confirms the fallback is
-  zero-overhead* — no regression vs stdlib — but it is **not** a SIMD result.
-* Notable side effect: because the fallback is stdlib, go-simd **beats the
-  tmthrgd "SIMD" reference on arm64** (2.5–9.7× on decode) — tmthrgd's arm64
-  path is much slower than Go's own stdlib hex. So go-simd is already the better
-  choice on arm64, just not via its own SIMD.
+* The new **arm64/NEON kernels win decisively** on both directions: encode is
+  6–21× stdlib (and beats the tmthrgd SIMD reference 6–23×); decode is ~2.5×
+  stdlib (and 6–24× tmthrgd, whose arm64 path collapses at 1 MiB).
+* Output is byte- and error-identical to `encoding/hex` on every input,
+  including invalid bytes at every offset and across block boundaries (the
+  per-block rejection hands the exact tail to the scalar loop, so
+  `InvalidByteError` offsets and `ErrLength` match stdlib bit-for-bit). 100%
+  test coverage; fuzz-clean.
 
 ### Action items
-1. **Add an arm64/NEON hex kernel** (encode: nibble-split + table lookup;
-   decode: validate + nibble-pack). This is the main gap — utf8 has the same
-   hole. go-asmgen already targets arm64 for base64/matchlen, so the kernel
-   shape is available.
+1. ~~Add an arm64/NEON hex kernel.~~ **Done** (this revision).
 2. **amd64/AVX2 follow-up:** run this harness on a real x86_64 VM to quantify the
    actual SIMD speedup vs stdlib and tmthrgd there (Rosetta = no AVX2).
