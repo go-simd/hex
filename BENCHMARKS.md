@@ -48,6 +48,39 @@ stdlib fallback), so go-simd ≈ stdlib by construction:
 | encode | 1.00× (fallback) | **21.4×** |
 | decode | 1.00× (fallback) | **2.49×** |
 
+## amd64 (AVX2, GitHub Actions x86_64 runner — ratios valid, absolute ns/op CI-noisy)
+
+**Methodology.** GitHub Actions `ubuntu-latest` runner, **AMD EPYC** (`avx2`
+present, **no `avx512*`** — confirmed from `/proc/cpuinfo`), `GOAMD64` baseline,
+Go stable, single core. Same parity harness, `-count=6`, **min-of-6**. The runner
+is shared, so absolute throughput is noisy and **not comparable to the arm64 M4
+Max rows above** (different hardware/ISA); the **ratios** (ours/stdlib,
+ours/tmthrgd) are measured back-to-back on the *same* CPU and are valid.
+Reproduce via `gh workflow run bench-amd64.yml`.
+
+### Encode (amd64 AVX2)
+
+| size | go-simd (MB/s) | stdlib | tmthrgd (SIMD ref) | ×stdlib | ×tmthrgd | verdict |
+|------|---------------:|-------:|-------------------:|--------:|---------:|---------|
+| 64 B   |  6987 | 936 |  8310 |  7.46× | 0.84× | beats stdlib; ~0.84× SIMD ref (tiny) |
+| 1 KiB  | 26818 | 932 | 18805 | 28.79× | 1.43× | **beats SIMD ref** |
+| 16 KiB | 27631 | 932 | 19811 | 29.65× | 1.39× | **beats SIMD ref** |
+| 1 MiB  | 22098 | 929 | 19756 | 23.78× | 1.12× | **beats SIMD ref** |
+
+### Decode (amd64 AVX2)
+
+| size | go-simd (MB/s) | stdlib | tmthrgd (SIMD ref) | ×stdlib | ×tmthrgd | verdict |
+|------|---------------:|-------:|-------------------:|--------:|---------:|---------|
+| 64 B   |  7573 | 1837 | 6968 | 4.12× | 1.09× | wins both |
+| 1 KiB  | 12525 | 1873 | 8666 | 6.69× | 1.45× | wins both |
+| 16 KiB | 13024 | 1892 | 8676 | 6.88× | 1.50× | wins both |
+| 1 MiB  | 12950 | 1887 | 8646 | 6.86× | 1.50× | **wins both** |
+
+* **Encode** beats stdlib up to **~30×** and **beats the tmthrgd SIMD reference**
+  at every size ≥ 1 KiB (1.12–1.43×); only the 64 B tiny case trails it (0.84×).
+* **Decode wins on both axes at every size**: ~4–7× stdlib and **1.09–1.50×
+  tmthrgd**. Byte-/error-identical to `encoding/hex` (per-block rejection).
+
 ## Summary
 
 * The new **arm64/NEON kernels win decisively** on both directions: encode is
@@ -61,5 +94,7 @@ stdlib fallback), so go-simd ≈ stdlib by construction:
 
 ### Action items
 1. ~~Add an arm64/NEON hex kernel.~~ **Done** (this revision).
-2. **amd64/AVX2 follow-up:** run this harness on a real x86_64 VM to quantify the
-   actual SIMD speedup vs stdlib and tmthrgd there (Rosetta = no AVX2).
+2. ~~**amd64/AVX2 follow-up:** quantify the SIMD speedup vs stdlib and tmthrgd.~~
+   **Done** (see the amd64 section) — measured on the GitHub Actions x86_64
+   runner (EPYC, AVX2). Encode ~24–30× stdlib and **beats tmthrgd** ≥1 KiB;
+   decode ~4–7× stdlib and **beats tmthrgd at every size** (1.09–1.50×).
