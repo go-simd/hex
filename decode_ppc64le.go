@@ -7,15 +7,18 @@ package hex
 // in decode_ppc64le.s. It attempts n blocks and returns the number fully decoded
 // before the first block containing an invalid char (== n when every attempted
 // block is valid); the caller resumes a scalar encoding/hex-style loop from there
-// so the error offset is bit-exact. VSX is the ppc64le baseline (POWER8+).
+// so the error offset is bit-exact. It emits ISA-3.0 (POWER9) instructions
+// (LXVB16X/STXVB16X) that SIGILL on POWER8, so callers must gate it behind hasVSX
+// (cpu.PPC64.IsPOWER9; declared in encode_ppc64le.go).
 func decodeBlocksVSX(dst, src []byte, n int) int
 
 // decodeSIMD decodes whole 32-char blocks of src into dst with the VSX kernel,
 // returning the bytes written to dst and consumed from src. It stops at the first
 // block containing an invalid char (so the caller's scalar tail produces the
 // exact InvalidByteError offset) and never reads or writes a partial block.
+// On a pre-POWER9 CPU it reports no progress so the whole input goes to the scalar path.
 func decodeSIMD(dst, src []byte) (dstDone, srcDone int) {
-	if len(src) >= 32 {
+	if hasVSX && len(src) >= 32 {
 		blocks := len(src) / 32
 		done := decodeBlocksVSX(dst, src, blocks)
 		return done * 16, done * 32
