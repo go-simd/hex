@@ -8,7 +8,14 @@ package hex
 // number of blocks fully decoded before the first block containing an invalid
 // char (== n when every attempted block is valid); the caller resumes a scalar
 // encoding/hex-style loop from there so the error offset is bit-exact.
+//
+// Both kernels only read src and write dst in place; they never retain either
+// pointer, so //go:noescape lets callers keep their buffers on the stack.
+//
+//go:noescape
 func decodeBlocksSSE(dst, src []byte, n int) int
+
+//go:noescape
 func decodeBlocksAVX2(dst, src []byte, n int) int
 
 // decodeSIMD decodes whole 32- or 64-char blocks of src into dst with the

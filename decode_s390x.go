@@ -7,7 +7,11 @@ package hex
 // in decode_s390x.s. It attempts n blocks and returns the number fully decoded
 // before the first block containing an invalid char (== n when every attempted
 // block is valid); the caller resumes a scalar encoding/hex-style loop from there
-// so the error offset is bit-exact.
+// so the error offset is bit-exact. It only reads src and writes dst in place
+// and never retains either pointer, so //go:noescape lets callers keep their
+// buffers on the stack.
+//
+//go:noescape
 func decodeBlocksVX(dst, src []byte, n int) int
 
 // decodeSIMD decodes whole 32-char blocks of src into dst with the vector kernel,

@@ -151,6 +151,44 @@ func FuzzDecode(f *testing.F) {
 	})
 }
 
+// TestEncodeNoAlloc pins the //go:noescape guarantee on the per-arch asm
+// encode kernels: because they never retain their []byte args, a caller that
+// encodes from/into stack buffers must allocate nothing. Without //go:noescape
+// on the asm declarations the buffers would be forced to the heap and this
+// would report a non-zero count. src is 64 bytes so every arch's kernel runs
+// (16-byte NEON/VSX/VX blocks, 16-byte SSE and 32-byte AVX2 blocks).
+func TestEncodeNoAlloc(t *testing.T) {
+	var src [64]byte
+	for i := range src {
+		src[i] = byte(i)
+	}
+	if allocs := testing.AllocsPerRun(1000, func() {
+		var dst [128]byte
+		Encode(dst[:], src[:])
+	}); allocs != 0 {
+		t.Fatalf("Encode from/into stack buffers allocated %v times, want 0", allocs)
+	}
+}
+
+// TestDecodeNoAlloc is the decode counterpart to TestEncodeNoAlloc: decoding
+// valid hex from/into stack buffers must not allocate once the asm kernels are
+// marked //go:noescape.
+func TestDecodeNoAlloc(t *testing.T) {
+	var src [128]byte
+	const digits = "0123456789abcdef"
+	for i := range src {
+		src[i] = digits[i&0xf]
+	}
+	if allocs := testing.AllocsPerRun(1000, func() {
+		var dst [64]byte
+		if _, err := Decode(dst[:], src[:]); err != nil {
+			t.Fatal(err)
+		}
+	}); allocs != 0 {
+		t.Fatalf("Decode from/into stack buffers allocated %v times, want 0", allocs)
+	}
+}
+
 func benchData() []byte { return randBytes(1<<20, 2) }
 
 func BenchmarkEncode(b *testing.B) {
