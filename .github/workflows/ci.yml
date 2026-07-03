@@ -25,8 +25,9 @@ jobs:
           echo "coverage=$pct"
           [ "$pct" = "100.0%" ] || { echo "coverage below 100%"; exit 1; }
       # Coverage-guided fuzz runs natively only; under TCG emulation it is flaky.
-      - run: go test -run '^$' -fuzz FuzzEncode -fuzztime 15s ./...
-      - run: go test -run '^$' -fuzz FuzzDecode -fuzztime 15s ./...
+      # Fuzz targets run over their seed corpus deterministically (no -fuzz, no
+      # time box, no flake); randomized time-boxed fuzzing runs nightly in fuzz.yml.
+      - run: go test -run '^Fuzz' ./...
 
   # Cross-architecture coverage under QEMU via binfmt. amd64/arm64 above run the
   # SIMD kernels natively; ppc64le (VSX) and s390x (vector facility) run their
