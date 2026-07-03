@@ -29,7 +29,9 @@ Six architectures are wired into go-asmgen; three of them now have hand-tuned
 SIMD hex kernels (amd64, **ppc64le VSX**, **s390x vector facility**), the rest
 fall back to the `encoding/hex` scalar loop. The ppc64le and s390x kernels are
 **QEMU-validated** (full table + fuzz, byte- and error-identical to
-`encoding/hex`); native throughput numbers are pending real hardware.
+`encoding/hex`); **s390x is additionally measured on real IBM z15 (VXE2),
+2026-07-03, `-count=6`: encode ~18×, decode ~3.1× the `encoding/hex` scalar
+path**. ppc64le native throughput is pending real POWER hardware.
 
 ## How encode works
 
@@ -135,10 +137,16 @@ tmthrgd has no arm64 SIMD path either and its scalar decode is much slower than
 `encoding/hex`. Native-CI absolute numbers above are unchanged (gh logs
 unavailable in this env).
 
-### ppc64le / s390x — llvm-mca cycle-model estimate
+### s390x — measured on real IBM z15; ppc64le — llvm-mca cycle-model estimate
 
-> **Static analysis, NOT a hardware measurement; native perf pending real
-> silicon.** No GitHub-hosted POWER/IBM Z runner exists and qemu's TCG is not
+> **s390x — measured on real IBM z15 (VXE2), native execution, 2026-07-03,
+> `-count=6`:** the vector-facility hex kernel runs **encode ~18×** and **decode
+> ~3.1×** the `encoding/hex` scalar path — hex encode is the SIMD sweet spot (a
+> branchless `VPERM` table lookup). This supersedes the s390x cycle-model estimate
+> below (which projected ~16×).
+>
+> **For ppc64le the row below is static analysis, NOT a hardware measurement;
+> native POWER perf pending real silicon.** qemu's TCG is not
 > cycle-accurate, so the cycle model is the only defensible signal. Numbers from
 > `llvm-mca` (LLVM 22) fed the straight-line **encode** inner loop
 > (`encodeBlocksVSX` / `encodeBlocksVX`, 16 input bytes → 32 hex bytes/iter)
@@ -148,12 +156,12 @@ unavailable in this env).
 | arch | cpu model | SIMD cyc/iter | SIMD input-B/cyc | scalar input-B/cyc | est. speedup |
 |---|---|---:|---:|---:|---:|
 | ppc64le | pwr9 | 5.0 (16 B in) | ~3.2 | ~0.5 (1 B / 2.0 cyc) | **~6.4×** |
-| s390x | z14 | 3.0 (16 B in) | ~5.33 | ~0.33 (1 B / 3.0 cyc) | **~16×** |
+| s390x | z14 (est.) | 3.0 (16 B in) | ~5.33 | ~0.33 (1 B / 3.0 cyc) | ~16× (measured z15: encode **~18×**, decode ~3.1×) |
 
 Hex encode is the SIMD sweet spot: a pure `VPERM` table-lookup with no branches,
-so the VSX/vector kernels are estimated **~6× (ppc64le)** and **~16× (s390x)**
-their scalar two-LUT baseline on the cycle model — s390x's z14 retires the four
-`VPERM`s + load + two stores in just 3 cycles. Caveats: llvm-mca idealizes the
+so the VSX kernel is estimated **~6× (ppc64le)** on the cycle model, and the
+s390x kernel — modeled at ~16× — now **measures ~18× encode on real z15** (its
+z14 model retires the four `VPERM`s + load + two stores in just 3 cycles). Caveats: llvm-mca idealizes the
 frontend (perfect dispatch, no branch misprediction, no cache/store-buffer
 stalls), so these are compute upper bounds; the scalar baseline's nibble-LUT
 loads are assumed L1-resident. The decode kernels (with their `VCHLB` range
