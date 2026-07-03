@@ -9,7 +9,11 @@ package hex
 // block is valid); the caller resumes a scalar encoding/hex-style loop from there
 // so the error offset is bit-exact. It emits ISA-3.0 (POWER9) instructions
 // (LXVB16X/STXVB16X) that SIGILL on POWER8, so callers must gate it behind hasVSX
-// (cpu.PPC64.IsPOWER9; declared in encode_ppc64le.go).
+// (cpu.PPC64.IsPOWER9; declared in encode_ppc64le.go). It only reads src and
+// writes dst in place and never retains either pointer, so //go:noescape lets
+// callers keep their buffers on the stack.
+//
+//go:noescape
 func decodeBlocksVSX(dst, src []byte, n int) int
 
 // decodeSIMD decodes whole 32-char blocks of src into dst with the VSX kernel,
