@@ -135,7 +135,24 @@ tmthrgd has no arm64 SIMD path either and its scalar decode is much slower than
 `encoding/hex`. Native-CI absolute numbers above are unchanged (gh logs
 unavailable in this env).
 
-### ppc64le / s390x — llvm-mca cycle-model estimate
+### s390x — measured on real z15 (2026-07-03)
+
+Real z15 (LPAR guest, VXE2, Ubuntu 6.8, go1.26.4):
+
+| bench | SIMD | stdlib | speedup |
+|---|---:|---:|---:|
+| `ParityEncode/16KiB` | **15904 MB/s** | 857 MB/s | **18.5×** |
+| `ParityEncode/1MiB`  | **15442 MB/s** | 856 MB/s | **18.0×** |
+| `ParityDecode/1KiB`  | **5678 MB/s**  | 1910 MB/s | **2.97×** |
+| `ParityDecode/16KiB` | **5858 MB/s**  | 1921 MB/s | **3.05×** |
+
+The z14 llvm-mca cycle-model estimate below projected ~16× for encode;
+the real z15 measurement lands right on top of it (18.5× ~ within 15% of
+the static model — closest match in the family). Decode wasn't modeled
+separately; ~3× is consistent with `VCHLB` range validation adding two
+compares per input byte.
+
+### ppc64le — llvm-mca cycle-model estimate
 
 > **Static analysis, NOT a hardware measurement; native perf pending real
 > silicon.** No GitHub-hosted POWER/IBM Z runner exists and qemu's TCG is not
