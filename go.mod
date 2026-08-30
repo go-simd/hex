@@ -4,5 +4,5 @@ go 1.26.4
 
 require (
 	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc
-	golang.org/x/sys v0.28.0
+	golang.org/x/sys v0.47.0
 )
