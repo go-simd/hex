@@ -75,13 +75,13 @@ func main() {
 		Raw("MOVD $0, R11"). // src byte offset
 		Raw("MOVD $0, R12"). // dst byte offset
 		Label("eloop").
-		Raw("LXVB16X (R11)(R4), VS32"). // V0 = 16 src bytes in natural memory order
-		Raw("VAND V0, V2, V6").         // V6 = low nibble
-		Raw("VSRB V0, V3, V7").         // V7 = high nibble (byte >> 4)
-		Raw("VPERM V1, V1, V7, V8").    // V8 = ASCII of high nibbles
-		Raw("VPERM V1, V1, V6, V9").    // V9 = ASCII of low nibbles
-		Raw("VPERM V8, V9, V4, V10").   // V10 = output bytes 0..15
-		Raw("VPERM V8, V9, V5, V11").   // V11 = output bytes 16..31
+		Raw("LXVB16X (R11)(R4), VS32").  // V0 = 16 src bytes in natural memory order
+		Raw("VAND V0, V2, V6").          // V6 = low nibble
+		Raw("VSRB V0, V3, V7").          // V7 = high nibble (byte >> 4)
+		Raw("VPERM V1, V1, V7, V8").     // V8 = ASCII of high nibbles
+		Raw("VPERM V1, V1, V6, V9").     // V9 = ASCII of low nibbles
+		Raw("VPERM V8, V9, V4, V10").    // V10 = output bytes 0..15
+		Raw("VPERM V8, V9, V5, V11").    // V11 = output bytes 16..31
 		Raw("STXVB16X VS42, (R12)(R3)"). // store V10 (natural byte order)
 		Raw("ADD $16, R12").
 		Raw("STXVB16X VS43, (R12)(R3)"). // store V11

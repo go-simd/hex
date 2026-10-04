@@ -79,48 +79,48 @@ func main() {
 		// Constant base addresses in R6.. (re-used per iteration via LXVB16X).
 		Raw("MOVD $0, R7"). // R7 = blocks done (return value)
 		Raw("CMP R5, $0").Raw("BEQ dret").
-		Raw("MOVD $0, R8").  // src byte offset
-		Raw("MOVD $0, R9").  // dst byte offset
+		Raw("MOVD $0, R8"). // src byte offset
+		Raw("MOVD $0, R9"). // dst byte offset
 		// Load constants into V registers once.
-		Raw("MOVD $%s+0(SB), R10", c0lo).Raw("LXVB16X (R0)(R10), VS40").  // V8  = '0'-1
-		Raw("MOVD $%s+0(SB), R10", c9hi).Raw("LXVB16X (R0)(R10), VS41").  // V9  = '9'+1
-		Raw("MOVD $%s+0(SB), R10", cUlo).Raw("LXVB16X (R0)(R10), VS42").  // V10 = 'A'-1
-		Raw("MOVD $%s+0(SB), R10", cUhi).Raw("LXVB16X (R0)(R10), VS43").  // V11 = 'F'+1
-		Raw("MOVD $%s+0(SB), R10", cLlo).Raw("LXVB16X (R0)(R10), VS44").  // V12 = 'a'-1
-		Raw("MOVD $%s+0(SB), R10", cLhi).Raw("LXVB16X (R0)(R10), VS45").  // V13 = 'f'+1
-		Raw("MOVD $%s+0(SB), R10", subD).Raw("LXVB16X (R0)(R10), VS46").  // V14 = '0'
-		Raw("MOVD $%s+0(SB), R10", subU).Raw("LXVB16X (R0)(R10), VS47").  // V15 = 'A'-10
-		Raw("MOVD $%s+0(SB), R10", subL).Raw("LXVB16X (R0)(R10), VS48").  // V16 = 'a'-10
-		Raw("MOVD $%s+0(SB), R10", four).Raw("LXVB16X (R0)(R10), VS49").  // V17 = 4
-		Raw("MOVD $%s+0(SB), R10", gHi).Raw("LXVB16X (R0)(R10), VS50").   // V18 = gatherHi
-		Raw("MOVD $%s+0(SB), R10", gLo).Raw("LXVB16X (R0)(R10), VS51").   // V19 = gatherLo
+		Raw("MOVD $%s+0(SB), R10", c0lo).Raw("LXVB16X (R0)(R10), VS40"). // V8  = '0'-1
+		Raw("MOVD $%s+0(SB), R10", c9hi).Raw("LXVB16X (R0)(R10), VS41"). // V9  = '9'+1
+		Raw("MOVD $%s+0(SB), R10", cUlo).Raw("LXVB16X (R0)(R10), VS42"). // V10 = 'A'-1
+		Raw("MOVD $%s+0(SB), R10", cUhi).Raw("LXVB16X (R0)(R10), VS43"). // V11 = 'F'+1
+		Raw("MOVD $%s+0(SB), R10", cLlo).Raw("LXVB16X (R0)(R10), VS44"). // V12 = 'a'-1
+		Raw("MOVD $%s+0(SB), R10", cLhi).Raw("LXVB16X (R0)(R10), VS45"). // V13 = 'f'+1
+		Raw("MOVD $%s+0(SB), R10", subD).Raw("LXVB16X (R0)(R10), VS46"). // V14 = '0'
+		Raw("MOVD $%s+0(SB), R10", subU).Raw("LXVB16X (R0)(R10), VS47"). // V15 = 'A'-10
+		Raw("MOVD $%s+0(SB), R10", subL).Raw("LXVB16X (R0)(R10), VS48"). // V16 = 'a'-10
+		Raw("MOVD $%s+0(SB), R10", four).Raw("LXVB16X (R0)(R10), VS49"). // V17 = 4
+		Raw("MOVD $%s+0(SB), R10", gHi).Raw("LXVB16X (R0)(R10), VS50").  // V18 = gatherHi
+		Raw("MOVD $%s+0(SB), R10", gLo).Raw("LXVB16X (R0)(R10), VS51").  // V19 = gatherLo
 		Label("dloop").
-		Raw("LXVB16X (R8)(R4), VS32").    // V0 = chars 0..15
+		Raw("LXVB16X (R8)(R4), VS32"). // V0 = chars 0..15
 		Raw("ADD $16, R8").
-		Raw("LXVB16X (R8)(R4), VS33").    // V1 = chars 16..31
+		Raw("LXVB16X (R8)(R4), VS33"). // V1 = chars 16..31
 		Raw("ADD $-16, R8").
-		Raw("VXOR V20, V20, V20")         // V20 = bad accumulator = 0
+		Raw("VXOR V20, V20, V20") // V20 = bad accumulator = 0
 
 	// half decodes 16 chars in V(xc) -> nibble values, OR-ing ~valid into V20.
 	// Scratch: V21..V27. xc is the V register number string.
 	half := func(xc string) {
 		// isDigit = (c > '0'-1) & ('9'+1 > c)
-		b.Raw("VCMPGTUB %s, V8, V21", xc)        // V21 = c > '0'-1
-		b.Raw("VCMPGTUB V9, %s, V22", xc)        // V22 = '9'+1 > c
-		b.Raw("VAND V21, V22, V21")              // V21 = isDigit
+		b.Raw("VCMPGTUB %s, V8, V21", xc) // V21 = c > '0'-1
+		b.Raw("VCMPGTUB V9, %s, V22", xc) // V22 = '9'+1 > c
+		b.Raw("VAND V21, V22, V21")       // V21 = isDigit
 		// isUpper
 		b.Raw("VCMPGTUB %s, V10, V22", xc)
 		b.Raw("VCMPGTUB V11, %s, V23", xc)
-		b.Raw("VAND V22, V23, V22")              // V22 = isUpper
+		b.Raw("VAND V22, V23, V22") // V22 = isUpper
 		// isLower
 		b.Raw("VCMPGTUB %s, V12, V23", xc)
 		b.Raw("VCMPGTUB V13, %s, V24", xc)
-		b.Raw("VAND V23, V24, V23")              // V23 = isLower
+		b.Raw("VAND V23, V24, V23") // V23 = isLower
 		// valid = isDigit | isUpper | isLower ; bad |= ~valid
 		b.Raw("VOR V21, V22, V24")
-		b.Raw("VOR V24, V23, V24")               // V24 = valid mask
-		b.Raw("VNOR V24, V24, V25")              // V25 = ~valid
-		b.Raw("VOR V20, V25, V20")               // accumulate bad
+		b.Raw("VOR V24, V23, V24")  // V24 = valid mask
+		b.Raw("VNOR V24, V24, V25") // V25 = ~valid
+		b.Raw("VOR V20, V25, V20")  // accumulate bad
 		// nibble = (c-'0')&isDigit | (c-('A'-10))&isUpper | (c-('a'-10))&isLower
 		b.Raw("VSUBUBM %s, V14, V26", xc).Raw("VAND V26, V21, V26") // digit part
 		b.Raw("VSUBUBM %s, V15, V27", xc).Raw("VAND V27, V22, V27").Raw("VOR V26, V27, V26")

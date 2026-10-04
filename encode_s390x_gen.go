@@ -72,15 +72,15 @@ func main() {
 		Raw("MOVD $%s+0(SB), R5", ctrlHi).Raw("VL (R5), V5"). // V5 = ctrlHi
 		Raw("CMPBEQ R3, $0, edone").
 		Label("eloop").
-		Raw("VL (R2), V0").             // V0 = 16 src bytes (lane 0 = first byte)
-		Raw("VN V0, V2, V6").           // V6 = low nibble
-		Raw("VESRLB $4, V0, V7").       // V7 = high nibble (byte >> 4)
-		Raw("VPERM V1, V1, V7, V8").    // V8 = ASCII of high nibbles
-		Raw("VPERM V1, V1, V6, V9").    // V9 = ASCII of low nibbles
-		Raw("VPERM V8, V9, V4, V10").   // V10 = output bytes 0..15
-		Raw("VPERM V8, V9, V5, V11").   // V11 = output bytes 16..31
-		Raw("VST V10, (R1)").           // store first 16 chars
-		Raw("VST V11, 16(R1)").         // store next 16 chars
+		Raw("VL (R2), V0").           // V0 = 16 src bytes (lane 0 = first byte)
+		Raw("VN V0, V2, V6").         // V6 = low nibble
+		Raw("VESRLB $4, V0, V7").     // V7 = high nibble (byte >> 4)
+		Raw("VPERM V1, V1, V7, V8").  // V8 = ASCII of high nibbles
+		Raw("VPERM V1, V1, V6, V9").  // V9 = ASCII of low nibbles
+		Raw("VPERM V8, V9, V4, V10"). // V10 = output bytes 0..15
+		Raw("VPERM V8, V9, V5, V11"). // V11 = output bytes 16..31
+		Raw("VST V10, (R1)").         // store first 16 chars
+		Raw("VST V11, 16(R1)").       // store next 16 chars
 		Raw("ADD $16, R2").
 		Raw("ADD $32, R1").
 		Raw("ADD $-1, R3").

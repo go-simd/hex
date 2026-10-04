@@ -53,8 +53,8 @@ func main() {
 	f := emit.NewFile("amd64")
 
 	// ---- SSE2/SSSE3: 16 input bytes -> 32 hex chars per block ----
-	lut := f.Data("hexlut", hexLUT)             // 16-byte PSHUFB nibble table
-	lo4 := f.Data("lomask", repByte(0x0f, 16))  // low-nibble mask
+	lut := f.Data("hexlut", hexLUT)            // 16-byte PSHUFB nibble table
+	lo4 := f.Data("lomask", repByte(0x0f, 16)) // low-nibble mask
 
 	s := amd64.NewFunc("encodeBlocksSSE", sig(), 0)
 	s.LoadArg("dst_base", "DI").LoadArg("src_base", "SI").LoadArg("n", "CX").
@@ -62,11 +62,11 @@ func main() {
 		Raw("MOVOU %s+0(SB), X8", lo4).
 		Raw("TESTQ CX, CX").Raw("JZ sdone").
 		Label("sloop").
-		Raw("MOVOU (SI), X0").       // 16 source bytes
-		Raw("MOVO X0, X1").          // X1 = bytes (for low nibble)
-		Raw("PSRLW $4, X0").         // X0 = bytes>>4 (word shift; high bits are junk)
-		Raw("PAND X8, X0").          // X0 = high nibble (0..15)
-		Raw("PAND X8, X1").          // X1 = low nibble (0..15)
+		Raw("MOVOU (SI), X0").                   // 16 source bytes
+		Raw("MOVO X0, X1").                      // X1 = bytes (for low nibble)
+		Raw("PSRLW $4, X0").                     // X0 = bytes>>4 (word shift; high bits are junk)
+		Raw("PAND X8, X0").                      // X0 = high nibble (0..15)
+		Raw("PAND X8, X1").                      // X1 = low nibble (0..15)
 		Raw("MOVO X7, X2").Raw("PSHUFB X0, X2"). // X2 = ASCII of high nibbles
 		Raw("MOVO X7, X3").Raw("PSHUFB X1, X3"). // X3 = ASCII of low nibbles
 		// Interleave hi/lo so output is hi0,lo0,hi1,lo1,... PUNPCKLBW dst,src
@@ -94,12 +94,12 @@ func main() {
 		Raw("VMOVDQU %s+0(SB), Y8", lo4b).
 		Raw("TESTQ CX, CX").Raw("JZ vdone").
 		Label("vloop").
-		Raw("VMOVDQU (SI), Y0").     // 32 source bytes
-		Raw("VPSRLW $4, Y0, Y1").    // Y1 = bytes>>4
-		Raw("VPAND Y8, Y1, Y1").     // Y1 = high nibble
-		Raw("VPAND Y8, Y0, Y0").     // Y0 = low nibble
-		Raw("VPSHUFB Y1, Y7, Y1").   // Y1 = ASCII high nibbles
-		Raw("VPSHUFB Y0, Y7, Y0").   // Y0 = ASCII low nibbles
+		Raw("VMOVDQU (SI), Y0").      // 32 source bytes
+		Raw("VPSRLW $4, Y0, Y1").     // Y1 = bytes>>4
+		Raw("VPAND Y8, Y1, Y1").      // Y1 = high nibble
+		Raw("VPAND Y8, Y0, Y0").      // Y0 = low nibble
+		Raw("VPSHUFB Y1, Y7, Y1").    // Y1 = ASCII high nibbles
+		Raw("VPSHUFB Y0, Y7, Y0").    // Y0 = ASCII low nibbles
 		Raw("VPUNPCKLBW Y0, Y1, Y2"). // per-lane: chars for bytes {0..7, 16..23}
 		Raw("VPUNPCKHBW Y0, Y1, Y3"). // per-lane: chars for bytes {8..15, 24..31}
 		// Reassemble in memory order. Output bytes 0..31 = lane0 of Y2 then
