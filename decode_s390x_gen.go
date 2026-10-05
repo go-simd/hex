@@ -95,30 +95,30 @@ func main() {
 		Raw("MOVD $%s+0(SB), R5", gHi).Raw("VL (R5), V18").  // gatherHi
 		Raw("MOVD $%s+0(SB), R5", gLo).Raw("VL (R5), V19").  // gatherLo
 		Label("dloop").
-		Raw("VL (R2), V0").     // chars 0..15
-		Raw("VL 16(R2), V1").   // chars 16..31
-		Raw("VZERO V20")        // bad accumulator = 0
+		Raw("VL (R2), V0").   // chars 0..15
+		Raw("VL 16(R2), V1"). // chars 16..31
+		Raw("VZERO V20")      // bad accumulator = 0
 
 	// half decodes 16 chars in V(xc) -> nibble values, OR-ing ~valid into V20.
 	// VCHLB Va, Vb, Vt sets Vt = (Va > Vb) unsigned, per byte.
 	half := func(xc string) {
 		// isDigit = (c > '0'-1) & ('9'+1 > c)
-		b.Raw("VCHLB %s, V8, V21", xc)        // V21 = c > '0'-1
-		b.Raw("VCHLB V9, %s, V22", xc)        // V22 = '9'+1 > c
-		b.Raw("VN V21, V22, V21")             // V21 = isDigit
+		b.Raw("VCHLB %s, V8, V21", xc) // V21 = c > '0'-1
+		b.Raw("VCHLB V9, %s, V22", xc) // V22 = '9'+1 > c
+		b.Raw("VN V21, V22, V21")      // V21 = isDigit
 		// isUpper
 		b.Raw("VCHLB %s, V10, V22", xc)
 		b.Raw("VCHLB V11, %s, V23", xc)
-		b.Raw("VN V22, V23, V22")             // V22 = isUpper
+		b.Raw("VN V22, V23, V22") // V22 = isUpper
 		// isLower
 		b.Raw("VCHLB %s, V12, V23", xc)
 		b.Raw("VCHLB V13, %s, V24", xc)
-		b.Raw("VN V23, V24, V23")             // V23 = isLower
+		b.Raw("VN V23, V24, V23") // V23 = isLower
 		// valid = isDigit | isUpper | isLower ; bad |= ~valid
 		b.Raw("VO V21, V22, V24")
-		b.Raw("VO V24, V23, V24")             // V24 = valid
-		b.Raw("VNO V24, V24, V25")            // V25 = ~valid (NOR with itself = NOT)
-		b.Raw("VO V20, V25, V20")             // accumulate bad
+		b.Raw("VO V24, V23, V24")  // V24 = valid
+		b.Raw("VNO V24, V24, V25") // V25 = ~valid (NOR with itself = NOT)
+		b.Raw("VO V20, V25, V20")  // accumulate bad
 		// nibble = (c-'0')&isDigit | (c-('A'-10))&isUpper | (c-('a'-10))&isLower
 		// VSB From, Reg, To computes To = Reg - From, so put the constant first.
 		b.Raw("VSB V14, %s, V26", xc).Raw("VN V26, V21, V26") // digit: c-'0'
